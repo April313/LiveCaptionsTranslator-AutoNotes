@@ -1,0 +1,9 @@
+# Runtime-generated files
+setting.json
+notes/note-*.md
+notes/consolidated.md
+*.tmp
+
+# Large packaged executable is uploaded as a GitHub Release asset.
+LiveCaptionsTranslator-AutoNotes.exe
+
