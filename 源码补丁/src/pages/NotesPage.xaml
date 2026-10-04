@@ -1,0 +1,48 @@
+<Page
+    x:Class="LiveCaptionsTranslator.NotesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="Auto Notes">
+    <ScrollViewer x:Name="PageScroll"
+                  VerticalScrollBarVisibility="Visible"
+                  HorizontalScrollBarVisibility="Disabled"
+                  CanContentScroll="False"
+                  PanningMode="VerticalOnly"
+                  PreviewMouseWheel="Page_PreviewMouseWheel">
+        <StackPanel Margin="24" MaxWidth="620">
+            <TextBlock FontSize="22" FontWeight="SemiBold" Text="自动笔记" />
+            <TextBlock Margin="0,6,0,20" TextWrapping="Wrap">每收集指定数量的字幕，使用本地 Ollama 生成一份 Markdown 摘要。不会上传音频、字幕或笔记。</TextBlock>
+            <ui:ToggleSwitch x:Name="EnabledSwitch" Margin="0,0,0,16" Content="自动生成笔记" IsChecked="{Binding AutoNotesEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" OnContent="开启" OffContent="关闭" />
+            <TextBlock Margin="0,0,0,4" Text="每多少条字幕生成一次" />
+            <ui:NumberBox Width="180" HorizontalAlignment="Left" Minimum="1" Maximum="200" Value="{Binding AutoNotesInterval, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,16,0,4" Text="Ollama 模型" />
+            <TextBox Width="280" HorizontalAlignment="Left" Text="{Binding AutoNotesModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,16,0,4" Text="Ollama 地址" />
+            <TextBox Width="360" HorizontalAlignment="Left" Text="{Binding AutoNotesApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,16,0,4" Text="笔记保存目录（相对路径位于程序目录下）" />
+            <TextBox Width="360" HorizontalAlignment="Left" Text="{Binding AutoNotesDirectory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,18,0,4" FontWeight="SemiBold" Text="笔记整合与去重" />
+            <ui:ToggleSwitch Margin="0,0,0,8" Content="生成后自动整合并清理分段笔记" IsChecked="{Binding AutoNotesConsolidateEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" OnContent="开启" OffContent="关闭" />
+            <TextBlock Margin="0,0,0,4" Text="整合模型" />
+            <TextBox Width="280" HorizontalAlignment="Left" Text="{Binding AutoNotesConsolidationModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,18,0,4" FontWeight="SemiBold" Text="选择要整合的笔记（自选）" />
+            <TextBlock x:Name="NotesCountText" Margin="0,0,0,6" TextWrapping="Wrap" FontSize="12" Opacity="0.75" Text="加载中..." />
+            <ListBox x:Name="NotesList" Height="150" SelectionMode="Multiple"
+                     PreviewMouseWheel="NotesList_PreviewMouseWheel" />
+            <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                <ui:Button Margin="0,0,10,0" Padding="14,6" Click="RefreshNotes_Click" Content="刷新列表" />
+                <ui:Button Padding="14,6" Click="ConsolidateSelected_Click" Content="立即整合所选" />
+            </StackPanel>
+            <StackPanel Margin="0,22,0,0" Orientation="Horizontal">
+                <ui:Button Margin="0,0,10,0" Padding="14,6" Click="GenerateNow_Click" Content="立即生成当前摘要" />
+                <ui:Button Margin="0,0,10,0" Padding="14,6" Click="ConsolidateNow_Click" Content="立即整合并清理（全部）" />
+                <ui:Button Padding="14,6" Click="OpenFolder_Click" Content="打开笔记目录" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText" Margin="0,18,0,0" TextWrapping="Wrap" />
+            <TextBlock Margin="0,18,0,0" TextWrapping="Wrap">
+                <Run FontWeight="SemiBold" Text="建议模型：" /><Run Text="摘要使用 qwen2.5:7b；整合使用 deepseek-r1:7b。首次使用前请运行 ollama pull 下载模型。" />
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
