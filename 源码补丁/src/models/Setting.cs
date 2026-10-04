@@ -26,7 +26,7 @@ namespace LiveCaptionsTranslator.models
         private string autoNotesApiUrl = "http://localhost:11434";
         private string autoNotesDirectory = "notes";
         private bool autoNotesConsolidateEnabled = true;
-        private string autoNotesConsolidationModelName = "deepseek-r1:7b";
+        private string autoNotesConsolidationModelName = "gemma4-12b";
         private string autoNotesConsolidatedFileName = "consolidated.md";
 
         private string apiName;

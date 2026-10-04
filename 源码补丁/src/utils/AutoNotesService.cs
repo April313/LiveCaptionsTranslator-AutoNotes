@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -18,8 +19,9 @@ namespace LiveCaptionsTranslator.utils
     /// </summary>
     public static class AutoNotesService
     {
-        // 300s：整合用 R1 时，输入是「已有整合稿 + 全部分段笔记」，120s 不够稳
-        private static readonly HttpClient client = new() { Timeout = TimeSpan.FromSeconds(300) };
+        // 900s：本地模型在 8GB 显卡上会有部分层落在 CPU，冷加载本身就可能耗时数分钟；
+        // 300s 会在「已有整合稿 + 全部分段笔记」的串行逐片合并中被打满，导致整合整体失败。
+        private static readonly HttpClient client = new() { Timeout = TimeSpan.FromSeconds(900) };
         private static readonly object sync = new();
         private static readonly List<TranslationHistoryEntry> buffer = [];
         private static CancellationTokenSource? cts;
@@ -27,6 +29,8 @@ namespace LiveCaptionsTranslator.utils
         private static bool generating;
 
         public static event Action<string>? StatusChanged;
+        /// <summary>整合进度：0.0～1.0；null 表示没有进行中的整合（用于隐藏进度条）。</summary>
+        public static event Action<double?>? ProgressChanged;
         public static string LastStatus { get; private set; } = "Auto notes is disabled.";
 
         public static void Start()
@@ -151,8 +155,7 @@ namespace LiveCaptionsTranslator.utils
                 string directory = ResolveNotesDirectory();
                 Directory.CreateDirectory(directory);
                 string filename = $"note-{DateTime.Now:yyyyMMdd-HHmmss}.md";
-                string header = $"# 自动笔记 {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n\n" +
-                                $"> 本笔记由本地 Ollama 模型 `{Translator.Setting.AutoNotesModelName}` 自动生成。\n\n";
+                string header = $"# 自动笔记 {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n\n";
                 string source = "\n\n---\n\n## 原始字幕\n\n" + transcript;
                 await File.WriteAllTextAsync(Path.Combine(directory, filename), header + note.Trim() + source, Encoding.UTF8, token);
                 Publish($"Saved: {Path.Combine(directory, filename)}");
@@ -246,18 +249,39 @@ namespace LiveCaptionsTranslator.utils
                 if (existingText.Length > 0)
                     allCaptions.AddRange(ExtractCaptions(existingText));
 
-                int passes = 0;
+                // 先把要喂模型的片段全部切好，才能给出确定的总片数（进度分母）。
+                var work = new List<(string File, string Chunk)>();
                 foreach (string path in notePaths)
                 {
                     string body = await File.ReadAllTextAsync(path, token);
                     allCaptions.AddRange(ExtractCaptions(body));
                     foreach (string chunk in SplitIntoChunks(StripTranscript(body), ConsolidationChunkChars))
-                    {
-                        passes++;
-                        Publish($"Consolidating... pass {passes} of batch ({Path.GetFileName(path)})");
-                        running = await MergeConsolidationAsync(running, chunk, token);
-                    }
+                        work.Add((Path.GetFileName(path), chunk));
                 }
+
+                if (work.Count == 0)
+                    throw new InvalidDataException("No consolidatable content in the selected notes.");
+
+                int total = work.Count;
+                int passes = 0;
+                var watch = Stopwatch.StartNew();
+                ReportProgress(0);
+                Publish($"整合中：0/{total} 片（{notePaths.Length} 个笔记，模型 {Translator.Setting.AutoNotesConsolidationModelName}）");
+
+                foreach (var (fileName, chunk) in work)
+                {
+                    int current = passes + 1;
+                    Publish($"整合中：{current}/{total} 片 · 已完成 {passes} 片 · 已用 {watch.Elapsed:mm\\:ss}"
+                            + (passes > 0 ? $" · 预计剩余 ~{FormatEta((watch.Elapsed.TotalSeconds / passes) * (total - passes))}" : "")
+                            + $"\n当前文件：{fileName}   （本片 {chunk.Length:N0} 字符，正在等待模型返回）");
+                    running = await MergeConsolidationAsync(running, chunk, token);
+                    passes++;
+                    ReportProgress((double)passes / total);
+                    double avg = watch.Elapsed.TotalSeconds / passes;
+                    Publish($"整合中：{passes}/{total} 片 · 已用 {watch.Elapsed:mm\\:ss}"
+                            + (passes < total ? $" · 预计剩余 ~{FormatEta(avg * (total - passes))}" : " · 合并完成，正在写回文件"));
+                }
+                watch.Stop();
 
                 if (string.IsNullOrWhiteSpace(running))
                     throw new InvalidDataException("Ollama returned an empty consolidated note.");
@@ -323,8 +347,7 @@ namespace LiveCaptionsTranslator.utils
                     "\n\n## 完整原文（已去重）\n\n" + transcript.ToString().TrimEnd() + "\n";
 
                 string tempPath = consolidatedPath + ".tmp";
-                string header = $"<!-- Updated {DateTime.Now:yyyy-MM-dd HH:mm:ss} by {Translator.Setting.AutoNotesConsolidationModelName} -->\n\n";
-                await File.WriteAllTextAsync(tempPath, header + finalText, Encoding.UTF8, token);
+                await File.WriteAllTextAsync(tempPath, finalText, Encoding.UTF8, token);
                 File.Move(tempPath, consolidatedPath, true);
 
                 // 只有整批折叠成功、且整合稿已原子替换后，才删除源笔记
@@ -349,6 +372,8 @@ namespace LiveCaptionsTranslator.utils
             }
             finally
             {
+                // 无论成功、取消还是失败，都要收回进度条。
+                ReportProgress(null);
                 // 整合结束后把显存让回给主模型（若两者不同），并弹出提示。
                 await SwitchBackToPrimaryModelAsync(token, toastSummary);
             }
@@ -766,7 +791,10 @@ namespace LiveCaptionsTranslator.utils
                     new { role = "user", content = userPrompt }
                 },
                 stream = false,
-                temperature
+                temperature,
+                // Gemma 4 等模型默认开启 thinking，思考 token 会挤占输出预算并拖慢整理；
+                // 整理任务只需按原文合并，显式关闭思考（与翻译路径 OllamaRequestData.think 一致）。
+                think = false
             };
             string url = Translator.Setting.AutoNotesApiUrl.TrimEnd('/') + "/api/chat";
             using var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -864,6 +892,35 @@ namespace LiveCaptionsTranslator.utils
         {
             LastStatus = message;
             StatusChanged?.Invoke(message);
+        }
+
+        /// <summary>报告整合进度；传 null 表示整合结束（前端隐藏进度条）。</summary>
+        private static void ReportProgress(double? fraction)
+        {
+            double? value = fraction;
+            if (value.HasValue)
+                value = Math.Clamp(value.Value, 0.0, 1.0);
+            try
+            {
+                ProgressChanged?.Invoke(value);
+            }
+            catch
+            {
+                // 前端订阅者异常不能让整合本身失败
+            }
+        }
+
+        /// <summary>把预估秒数格式化成「1m20s」这类短文本，负数或无效值按 0 处理。</summary>
+        private static string FormatEta(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+                seconds = 0;
+            var span = TimeSpan.FromSeconds(seconds);
+            if (span.TotalHours >= 1)
+                return $"{(int)span.TotalHours}h{span.Minutes:D2}m";
+            if (span.TotalMinutes >= 1)
+                return $"{span.Minutes}m{span.Seconds:D2}s";
+            return $"{span.Seconds}s";
         }
     }
 }

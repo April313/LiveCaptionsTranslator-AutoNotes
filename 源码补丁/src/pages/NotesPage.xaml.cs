@@ -14,7 +14,12 @@ namespace LiveCaptionsTranslator
             DataContext = Translator.Setting;
             StatusText.Text = AutoNotesService.LastStatus;
             AutoNotesService.StatusChanged += OnStatusChanged;
-            Unloaded += (_, _) => AutoNotesService.StatusChanged -= OnStatusChanged;
+            AutoNotesService.ProgressChanged += OnProgressChanged;
+            Unloaded += (_, _) =>
+            {
+                AutoNotesService.StatusChanged -= OnStatusChanged;
+                AutoNotesService.ProgressChanged -= OnProgressChanged;
+            };
 
             // 本页所在的 NavigationView 会把页面按"无限高度"测量（内容宿主不提供有限高度），
             // 于是 ScrollViewer 永远认为内容没超出、滚动条不出现。这里显式按窗口高度给出尺寸。
@@ -45,6 +50,23 @@ namespace LiveCaptionsTranslator
         private void OnStatusChanged(string status)
         {
             Dispatcher.Invoke(() => StatusText.Text = status);
+        }
+
+        /// <summary>整合进度：有值时显示进度条，传 null 时隐藏。</summary>
+        private void OnProgressChanged(double? fraction)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (fraction.HasValue)
+                {
+                    ConsolidateProgress.Value = fraction.Value;
+                    ConsolidateProgressPanel.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    ConsolidateProgressPanel.Visibility = Visibility.Collapsed;
+                }
+            });
         }
 
         /// <summary>笔记目录（相对路径按程序目录解析）。</summary>

@@ -40,9 +40,9 @@
                 <ui:Button Padding="14,6" Click="OpenFolder_Click" Content="打开笔记目录" />
             </StackPanel>
             <TextBlock x:Name="StatusText" Margin="0,18,0,0" TextWrapping="Wrap" />
-            <TextBlock Margin="0,18,0,0" TextWrapping="Wrap">
-                <Run FontWeight="SemiBold" Text="建议模型：" /><Run Text="摘要使用 qwen2.5:7b；整合使用 deepseek-r1:7b。首次使用前请运行 ollama pull 下载模型。" />
-            </TextBlock>
+            <StackPanel x:Name="ConsolidateProgressPanel" Margin="0,8,0,0" Visibility="Collapsed">
+                <ProgressBar x:Name="ConsolidateProgress" Height="6" Minimum="0" Maximum="1" />
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>

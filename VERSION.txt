@@ -1,6 +1,6 @@
-﻿LiveCaptionsTranslator-AutoNotes  绿色版 v1.0.0
+LiveCaptionsTranslator-AutoNotes  绿色版 v1.1.0
 构建日期: 2026-10-04
 程序本体: 基于 SakiRinn/LiveCaptions-Translator (MIT)
-          加 Auto Notes 自动笔记 + DeepSeek-R1 整合去重补丁
+          加 Auto Notes 自动笔记 + Gemma 4 本地化与整合修复补丁
 目标平台: Windows 11 22H2 (build 22621) 及以上, x64
 运行方式: fdd (需 .NET 8 桌面运行时) / 单文件自包含 exe
